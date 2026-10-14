@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: historical-board-game
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    plan: free

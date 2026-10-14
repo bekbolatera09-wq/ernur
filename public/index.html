@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="kk">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#092f28">
+    <meta name="description" content="Қазақстан тарихына арналған 2–12 адамдық үстел ойыны.">
+    <title>Тарихи үстел — Қазақстан тарихы</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="/socket.io/socket.io.js" defer></script>
+    <script src="game.js" defer></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Тарихи үстел — басты бет">
+          <span class="brand-mark" aria-hidden="true">✦</span>
+          <span><strong>Тарихи үстел</strong><small>ҚАЗАҚСТАН ТАРИХЫ БОЙЫНША ОЙЫН</small></span>
+        </a>
+        <div class="topbar-note"><span class="online-dot"></span> 2–12 ойыншы · Онлайн</div>
+      </header>
+
+      <section class="game-layout" aria-label="Ойын тақтасы">
+        <section class="board-panel">
+          <div class="board-heading">
+            <div>
+              <p class="eyebrow">ҰЛЫ ДАЛА ТАРИХЫ</p>
+              <h1>Тарихи жол</h1>
+            </div>
+            <div class="board-legend" aria-label="Ұяшық белгілері">
+              <span>⭐ Жұлдыз</span><span>🎁 Бонус</span><span>🧰 Сандық</span><span>🏰 Қала</span>
+            </div>
+          </div>
+          <div class="board-wrap" id="board-wrap" aria-label="Ойын картасы">
+            <img class="board-art" src="history-board.png" alt="Қазақстанның тарихи кезеңдері бейнеленген ойын картасы">
+            <div class="board-tiles" id="board-tiles" aria-label="Интерактивті ойын ұяшықтары"></div>
+            <div class="token-layer" id="token-layer" aria-label="Ойыншылардың фигуралары"></div>
+            <div class="start-space" id="start-space" aria-label="Бастау ұяшығы">
+              <span>СТАРТ</span>
+            </div>
+            <div class="dice-overlay hidden" id="dice-overlay" aria-live="polite" aria-label="Кубик нәтижесі">
+              <div class="dice-scene"><div class="dice-cube" id="dice-cube">
+                <span class="dice-face face-front">1</span><span class="dice-face face-back">6</span>
+                <span class="dice-face face-right">3</span><span class="dice-face face-left">4</span>
+                <span class="dice-face face-top">5</span><span class="dice-face face-bottom">2</span>
+              </div></div><strong class="dice-result-number" id="dice-result-number"></strong>
+            </div>
+          </div>
+          <p class="board-caption">Бастаудан шығып, 48 қадамнан кейін мәреге жетіңіз. Барлық ойыншы мәреге келгенде ойын аяқталады.</p>
+        </section>
+
+        <aside class="side-panel">
+          <section class="turn-card" aria-live="polite">
+            <div class="turn-label"><span class="turn-pulse"></span><span id="turn-label">ОЙЫН БАСТАЛМАДЫ</span></div>
+            <h2 id="active-player">Ойынға дайынсыз ба?</h2>
+            <p id="turn-hint">Ойыншыларды қосып, тарихи сапарды бастаңыз.</p>
+            <div class="dice-row">
+              <div class="die" id="die" aria-label="Кубик"><span>⚄</span></div>
+              <button class="primary-button" id="roll-button" type="button" disabled>🎲 Кубикті лақтыру</button>
+            </div>
+            <div class="roll-result" id="roll-result" aria-live="polite"></div>
+            <button class="text-button" id="leave-room-button" type="button" hidden>Бөлмеден шығу</button>
+          </section>
+
+          <section class="players-section">
+            <div class="section-heading">
+              <div><p class="eyebrow">ОЙЫНШЫЛАР</p><h2>Жарыс кестесі</h2></div>
+              <span class="player-count" id="player-count">0 / 12</span>
+            </div>
+            <div class="players-list" id="players-list">
+              <div class="empty-state">Ойын басталған соң ойыншылар осында көрінеді.</div>
+            </div>
+          </section>
+          <section class="log-section">
+            <div class="section-heading"><div><p class="eyebrow">САПАР ЖУРНАЛЫ</p><h2>Соңғы оқиғалар</h2></div></div>
+            <ol class="event-log" id="event-log" aria-live="polite"></ol>
+          </section>
+        </aside>
+      </section>
+
+      <footer class="footer"><span>Тарихты біл — жеңіске жет!</span><span>Қазақстан тарихы · 2–12 ойыншы</span></footer>
+    </main>
+
+    <div class="modal-backdrop" id="setup-modal" role="dialog" aria-modal="true" aria-labelledby="setup-title">
+      <section class="modal setup-card">
+        <div class="modal-emblem">✦</div>
+        <p class="eyebrow">ТАРИХИ САПАР БАСТАЛАДЫ</p>
+        <h2 id="setup-title">Ойынды таңдаңыз</h2>
+        <p class="modal-intro">Бөлме құрып, кодты достарыңызбен бөлісіңіз немесе бар ойынға қосылыңыз.</p>
+        <div class="entry-actions" id="entry-actions">
+          <button class="primary-button wide-button" id="show-create-button" type="button">✦ Жаңа ойын құру</button>
+          <button class="secondary-button wide-button" id="show-join-button" type="button">Ойынға қосылу</button>
+        </div>
+        <div class="entry-form hidden" id="create-form">
+          <label class="field-label" for="create-name">Есіміңіз (міндетті, 16 таңбаға дейін)</label>
+          <input class="name-input" id="create-name" maxlength="16" autocomplete="nickname" placeholder="Есіміңіз">
+          <label class="field-label" for="create-max-players">Ойыншылардың шекті саны</label>
+          <select class="player-number" id="create-max-players">
+            <option value="2">2 ойыншы</option><option value="3">3 ойыншы</option><option value="4">4 ойыншы</option>
+            <option value="5">5 ойыншы</option><option value="6">6 ойыншы</option><option value="7">7 ойыншы</option>
+            <option value="8">8 ойыншы</option><option value="9">9 ойыншы</option><option value="10">10 ойыншы</option>
+            <option value="11">11 ойыншы</option><option value="12" selected>12 ойыншы</option>
+          </select>
+          <label class="field-label" for="create-color">Фишка түсі</label>
+          <select class="player-number color-picker" id="create-color"></select>
+          <button class="primary-button wide-button" id="create-room-button" type="button">Бөлме құру</button>
+        </div>
+        <div class="entry-form hidden" id="join-form">
+          <label class="field-label" for="join-code">Ойын коды</label>
+          <input class="name-input code-input" id="join-code" type="tel" inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="one-time-code" placeholder="Мысалы, 4821">
+          <label class="field-label" for="join-name">Есіміңіз (міндетті, 16 таңбаға дейін)</label>
+          <input class="name-input" id="join-name" maxlength="16" autocomplete="nickname" placeholder="Есіміңіз">
+          <label class="field-label" for="join-color">Фишка түсі</label>
+          <select class="player-number color-picker" id="join-color"></select>
+          <button class="primary-button wide-button" id="join-room-button" type="button">Ойынға қосылу</button>
+        </div>
+        <div class="lobby-panel hidden" id="lobby-panel">
+          <p class="lobby-label">ОЙЫН КОДЫ</p><div class="room-code" id="room-code"></div>
+          <div class="lobby-actions"><button class="secondary-button" id="copy-code-button" type="button">Көшіру</button><button class="secondary-button" id="share-link-button" type="button">Сілтемені бөлісу</button></div>
+          <p class="lobby-label lobby-player-label">ОЙЫНШЫЛАР <span id="lobby-count"></span></p>
+          <div class="lobby-list" id="lobby-list"></div>
+          <p class="lobby-waiting" id="lobby-waiting">Кемінде 2 ойыншы жиналғанша күтіңіз.</p>
+          <button class="primary-button wide-button hidden" id="start-game-button" type="button">Ойынды бастау →</button>
+        </div>
+        <p class="form-error" id="setup-error" role="alert"></p>
+        <button class="text-button hidden" id="back-entry-button" type="button">← Артқа</button>
+        <div class="finish-rule"><span aria-hidden="true">🏁</span><span><strong>Мәре ережесі</strong> — 48 ұяшық жүріп өтіңіз. Әділ қорытынды үшін барлық ойыншы мәреге жеткенде ойын аяқталады.</span></div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop hidden" id="question-modal" role="dialog" aria-modal="true" aria-labelledby="question-title">
+      <section class="modal question-card">
+        <div class="question-topline"><span class="question-category" id="question-category"></span><span class="timer" id="question-timer">01:00</span></div>
+        <div class="timer-track"><span id="timer-bar"></span></div>
+        <h2 id="question-title">Сұрақ</h2>
+        <div class="answer-list" id="answer-list"></div>
+        <div class="question-bottom"><button class="secondary-button" id="fifty-button" type="button" hidden>🎯 50/50 қолдану</button><span id="question-note">Дұрыс жауап: +20 ұпай</span></div>
+        <div class="answer-feedback" id="answer-feedback" aria-live="polite"></div>
+        <button class="primary-button wide-button hidden" id="question-continue" type="button">Жалғастыру</button>
+      </section>
+    </div>
+
+    <div class="modal-backdrop hidden" id="reward-modal" role="dialog" aria-modal="true" aria-labelledby="reward-title">
+      <section class="modal reward-card">
+        <div class="reward-icon" id="reward-icon">🎁</div>
+        <p class="eyebrow" id="reward-eyebrow">СЫЙЛЫҚ</p>
+        <h2 id="reward-title">Сыйлық!</h2>
+        <p class="modal-intro" id="reward-description"></p>
+        <button class="primary-button wide-button" id="reward-continue" type="button">Жалғастыру <span aria-hidden="true">→</span></button>
+      </section>
+    </div>
+
+    <div class="modal-backdrop hidden" id="info-modal" role="dialog" aria-modal="true" aria-labelledby="info-title">
+      <section class="modal info-card">
+        <button class="close-button" id="info-close" type="button" aria-label="Жабу">×</button>
+        <div class="reward-icon" id="info-icon">🏛️</div>
+        <p class="eyebrow">ТАРИХИ ҰЯШЫҚ</p>
+        <h2 id="info-title"></h2>
+        <p class="modal-intro" id="info-description"></p>
+      </section>
+    </div>
+
+    <div class="modal-backdrop hidden" id="summary-modal" role="dialog" aria-modal="true" aria-labelledby="summary-title">
+      <section class="modal summary-card">
+        <div class="modal-emblem">🏆</div><p class="eyebrow">ТАРИХИ САПАР АЯҚТАЛДЫ</p>
+        <h2 id="summary-title">Жеңімпаздар</h2><p class="modal-intro" id="summary-intro"></p>
+        <div class="summary-list" id="summary-list"></div>
+        <button class="primary-button wide-button" id="replay-button" type="button">Қайта ойнау <span aria-hidden="true">↻</span></button>
+      </section>
+    </div>
+  </body>
+</html>

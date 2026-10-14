@@ -1,0 +1,17 @@
+{
+  "name": "historical-board-game",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Қазақстан тарихына арналған 2–12 ойыншы онлайн үстел ойыны",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}
