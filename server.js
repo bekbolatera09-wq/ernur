@@ -5,6 +5,11 @@ const path = require("node:path");
 const express = require("express");
 const http = require("node:http");
 const { Server } = require("socket.io");
+const { QUESTIONS, drawQuestion, initializeQuestionCycle } = require("./question-bank");
+const {
+  BONUS_CONFIG, canRollDice, canUseExtraMove, grantBonus,
+  pickWeightedBonus, resolveDuplicateDouble, shouldOfferExtraMove
+} = require("./game-rules");
 
 const PORT = Number(process.env.PORT) || 3000;
 const ROOM_TTL = 2 * 60 * 60 * 1000;
@@ -28,52 +33,6 @@ const CITY_SPACES = new Map([[6, "Түркістан"], [12, "Отырар"], [1
 const BONUS_SPACES = new Set([4, 11, 20, 29, 40]);
 const CHEST_SPACES = new Set([7, 13, 22, 32, 47]);
 const STAR_SPACES = new Set([3, 9, 15, 24, 34, 43]);
-const QUESTIONS = [
-  { era: "Түркі дәуірі", q: "Түрік қағанаты қай жылы құрылды?", a: ["552 жылы", "603 жылы", "704 жылы", "756 жылы"], correct: 0 },
-  { era: "Түркі дәуірі", q: "Күлтегін жазба ескерткіштері қай өзен аңғарында табылған?", a: ["Іле", "Орхон", "Сырдария", "Ертіс"], correct: 1 },
-  { era: "Түркі дәуірі", q: "Қарлұқ мемлекеті Жетісуда шамамен қай жылы құрылды?", a: ["552 жылы", "704 жылы", "756 жылы", "942 жылы"], correct: 2 },
-  { era: "Түркі дәуірі", q: "Ұлы Жібек жолы Қазақстанның қай қалалары арқылы өтті?", a: ["Тараз бен Отырар", "Ақмола мен Атбасар", "Петропавл мен Көкшетау", "Екібастұз бен Рудный"], correct: 0 },
-  { era: "Моңғол дәуірі", q: "Отырар қорғанысы моңғол шапқыншылығы кезінде қай жылы басталды?", a: ["1206 жылы", "1219 жылы", "1227 жылы", "1240 жылы"], correct: 1 },
-  { era: "Моңғол дәуірі", q: "Шыңғыс ханның заңдар жинағы қалай аталды?", a: ["Жеті жарғы", "Қасқа жол", "Яса", "Төре бітігі"], correct: 2 },
-  { era: "Моңғол дәуірі", q: "Алтын Орда мемлекетінің негізін қалаған кім?", a: ["Бату хан", "Өзбек хан", "Берке хан", "Мөңке хан"], correct: 0 },
-  { era: "Қазақ хандығы", q: "Қазақ хандығының негізін қалаған хандар кімдер?", a: ["Қасым мен Хақназар", "Керей мен Жәнібек", "Тәуке мен Есім", "Абылай мен Әбілқайыр"], correct: 1 },
-  { era: "Қазақ хандығы", q: "Қазақ хандығының құрылған уақыты ретінде қай жылдар қабылданған?", a: ["1219–1220 жылдар", "1428–1429 жылдар", "1465–1466 жылдар", "1511–1512 жылдар"], correct: 2 },
-  { era: "Қазақ хандығы", q: "«Қасым ханның қасқа жолы» кімнің тұсында жасалды?", a: ["Қасым хан", "Есім хан", "Тәуке хан", "Хақназар хан"], correct: 0 },
-  { era: "Қазақ хандығы", q: "«Жеті жарғы» заңдар жинағы қай ханның тұсында жасалды?", a: ["Жәңгір хан", "Тәуке хан", "Абылай хан", "Керей хан"], correct: 1 },
-  { era: "Қазақ хандығы", q: "Абылай хан үш жүздің ханы болып қай жылы сайланды?", a: ["1731 жылы", "1756 жылы", "1771 жылы", "1781 жылы"], correct: 2 },
-  { era: "Қазақ хандығы", q: "Қазақ хандығының алғашқы астаналарының бірі болған қала?", a: ["Сығанақ", "Семей", "Қостанай", "Ақтөбе"], correct: 0 },
-  { era: "Ресей империясы", q: "Кіші жүз ханы Әбілқайыр Ресей бодандығын қабылдау туралы антты қай жылы берді?", a: ["1723 жылы", "1731 жылы", "1748 жылы", "1771 жылы"], correct: 1 },
-  { era: "Ресей империясы", q: "Кенесары Қасымұлы бастаған ұлт-азаттық көтеріліс қай жылдары болды?", a: ["1783–1797", "1836–1838", "1837–1847", "1916–1917"], correct: 2 },
-  { era: "Алаш қозғалысы", q: "Алаш партиясы қай жылы құрылды?", a: ["1917 жылы", "1905 жылы", "1920 жылы", "1925 жылы"], correct: 0 },
-  { era: "Алаш қозғалысы", q: "Алашорда үкіметінің төрағасы кім болды?", a: ["Ахмет Байтұрсынұлы", "Әлихан Бөкейхан", "Міржақып Дулатұлы", "Мағжан Жұмабаев"], correct: 1 },
-  { era: "Алаш қозғалысы", q: "Алаш партиясының бағдарламасы жарияланған басылым?", a: ["«Айқап»", "«Түркістан уалаяты»", "«Қазақ» газеті", "«Серке»"], correct: 2 },
-  { era: "Кеңестік Қазақстан", q: "Қазақ КСР-і одақтас республика мәртебесін қай жылы алды?", a: ["1936 жылы", "1920 жылы", "1925 жылы", "1941 жылы"], correct: 0 },
-  { era: "Кеңестік Қазақстан", q: "Желтоқсан оқиғасы қай жылы болды?", a: ["1979 жылы", "1986 жылы", "1989 жылы", "1991 жылы"], correct: 1 },
-  { era: "Тәуелсіз Қазақстан", q: "Қазақстан тәуелсіздігін қай күні жариялады?", a: ["25 қазан 1990 жыл", "1 желтоқсан 1991 жыл", "16 желтоқсан 1991 жыл", "30 тамыз 1995 жыл"], correct: 2 },
-  { era: "Тәуелсіз Қазақстан", q: "Қазақстанның қолданыстағы Конституциясы қай жылы қабылданды?", a: ["1995 жылы", "1991 жылы", "1993 жылы", "1997 жылы"], correct: 0 },
-  { era: "Тәуелсіз Қазақстан", q: "Астана Ақмолаға қай жылы көшірілді?", a: ["1991 жылы", "1997 жылы", "1998 жылы", "2000 жылы"], correct: 1 },
-  { era: "Тәуелсіз Қазақстан", q: "Қазақстанның ұлттық валютасы — теңге айналымға қай жылы енгізілді?", a: ["1991 жылы", "1992 жылы", "1993 жылы", "1995 жылы"], correct: 2 }
-];
-const CITY_QUESTIONS = {
-  "Түркістан": { era: "Түркістан қаласы", q: "Қожа Ахмет Ясауи кесенесін салдыруға Әмір Темір қай ғасырда бұйрық берді?", a: ["XIV ғасырда", "X ғасырда", "XII ғасырда", "XVI ғасырда"], correct: 0 },
-  "Отырар": { era: "Отырар қаласы", q: "Отырар қаласының моңғол шапқыншылығына қарсы қорғанысы қай жылы басталды?", a: ["1219 жылы", "1206 жылы", "1227 жылы", "1236 жылы"], correct: 0 },
-  "Тараз": { era: "Тараз қаласы", q: "Орта ғасырларда Тараз қандай халықаралық сауда жолының бойында орналасқан?", a: ["Ұлы Жібек жолы", "Дәмдеуіш жолы", "Патша жолы", "Сарыарқа жолы"], correct: 0 },
-  "Сауран": { era: "Сауран қаласы", q: "Сауран орта ғасырларда қай өңірдің маңызды бекіністі қалаларының бірі болды?", a: ["Сырдария бойы", "Ертіс бойы", "Жайық бойы", "Іле бойы"], correct: 0 },
-  "Сарайшық": { era: "Сарайшық қаласы", q: "Сарайшық қаласы қай өзеннің бойында орналасқан?", a: ["Жайық", "Сырдария", "Есіл", "Талас"], correct: 0 }
-};
-const HARD_QUESTIONS = [
-  { era: "Күрделі сұрақ", q: "Орхон жазбаларын көне түркі тілінде алғаш оқып, ғылыми түрде жариялаған ғалым кім?", a: ["Вильгельм Томсен", "Василий Радлов", "Шоқан Уәлиханов", "Әлкей Марғұлан"], correct: 0 },
-  { era: "Күрделі сұрақ", q: "«Жеті жарғыны» жасауға атсалысқан үш әйгілі би кімдер?", a: ["Төле, Қазыбек, Әйтеке билер", "Бұқар, Ақтамберді, Үмбетей жыраулар", "Керей, Жәнібек, Қасым хандар", "Исатай, Махамбет, Кенесары"], correct: 0 },
-  { era: "Күрделі сұрақ", q: "Қазақ хандығының күшеюі мен жерінің кеңеюі көбіне қай ханның тұсымен байланысты?", a: ["Қасым хан", "Тәуекел хан", "Жәңгір хан", "Болат хан"], correct: 0 },
-  { era: "Күрделі сұрақ", q: "Отырар қаласының ортағасырлық атауларының бірі қандай?", a: ["Фараб", "Ясы", "Сайрам", "Баласағұн"], correct: 0 }
-];
-const BONUS_DECK = [
-  { id: "double", icon: "⚡", title: "Қос жүріс", description: "Осы жүрістен кейін тағы бір рет кубик лақтырасыз." },
-  { id: "shield", icon: "🛡️", title: "Қорғаныс", description: "Теріс әсерге қарсы бір қорғаныс жинағы берілді." },
-  { id: "points", icon: "💎", title: "+50 ұпай", description: "Ұпайыңызға бірден 50 ұпай қосылды." },
-  { id: "time", icon: "⏳", title: "+30 секунд", description: "Келесі сұрақта 90 секунд беріледі." },
-  { id: "fifty", icon: "🎯", title: "50/50 мүмкіндігі", description: "Келесі сұрақта екі қате жауапты алып тастай аласыз." }
-];
 const ACHIEVEMENTS = {
   scholar: { icon: "🥇", title: "Тарих білгірі", description: "10 сұраққа дұрыс жауап берді." },
   quick: { icon: "🔥", title: "Жылдам ой", description: "Сұраққа алғашқы 10 секундта дұрыс жауап берді." },
@@ -82,13 +41,13 @@ const ACHIEVEMENTS = {
 };
 const CHEST_REWARDS = [
   { id: "points", icon: "💎", title: "+100 ұпай", description: "Қазынадан 100 ұпай алдыңыз." },
-  { id: "double", icon: "⚡", title: "Қос жүріс", description: "Осы жүрістен кейін тағы бір рет кубик лақтырасыз." },
+  { id: "double", icon: "⚡", title: "Қос жүріс", description: "Қосымша жүрісті қаласаңыз, келесі кезекте бір рет қолдана аласыз." },
   { id: "shield", icon: "🛡️", title: "Қорғаныс", description: "Теріс әсерге қарсы бір қорғаныс жинағы берілді." },
   { id: "time", icon: "⏳", title: "+30 секунд", description: "Келесі сұрақта 90 секунд беріледі." },
   { id: "fifty", icon: "🎯", title: "50/50 мүмкіндігі", description: "Келесі сұрақта екі қате жауапты алып тастай аласыз." },
   { id: "hard", icon: "📜", title: "Күрделі тарихи сұрақ", description: "Дұрыс жауабыңызға қосымша +50 ұпай беріледі." },
   { id: "rare-points", icon: "✨", title: "Сирек бонус · +150 ұпай", description: "Сирек қазынадан бірден 150 ұпай алдыңыз." },
-  { id: "rare-move", icon: "🌠", title: "Сирек бонус · екі жүріс", description: "Екі қосымша кубик лақтыру мүмкіндігі берілді." }
+  { id: "rare-move", icon: "🌠", title: "Сирек бонус · қос жүріс", description: "Қосымша жүрісті қаласаңыз, келесі кезекте бір рет қолдана аласыз." }
 ];
 
 const app = express();
@@ -156,10 +115,10 @@ function publicQuestion(question) {
     id: question.id,
     playerId: question.playerId,
     kind: question.kind,
-    category: question.data.era,
+    category: question.data.topic,
     city: question.space?.city || null,
-    text: question.data.q,
-    answers: question.data.a.map((text, index) => ({ index, text })).filter((answer) => question.visibleAnswers.includes(answer.index)),
+    text: question.data.question,
+    answers: question.data.options.map((text, index) => ({ index, text })).filter((answer) => question.visibleAnswers.includes(answer.index)),
     deadline: question.deadline,
     duration: question.duration
   };
@@ -179,13 +138,20 @@ function serializeRoom(room, playerId) {
     meId: playerId || null,
     currentTurn: room.currentTurn,
     currentPlayerId: room.players[room.currentTurn]?.id || null,
+    turnRolls: state.turnRolls,
+    extraMoveOffer: state.extraMoveOffer,
+    extraMovePending: state.extraMovePending,
     phase: state.phase,
     spaces: state.spaces,
     diceValue: state.diceValue,
     question: publicQuestion(state.question),
     answerResult: state.answerResult,
     reward: state.reward,
+    rewardSource: state.rewardSource,
     rewardCount: state.rewards.length,
+    usedQuestionIds: [...state.usedQuestionIds],
+    questionCycle: state.questionCycle,
+    questionsRemaining: state.questionQueue.length,
     openedChests: state.openedChests,
     log: state.log,
     winnerId: state.winnerId,
@@ -289,11 +255,7 @@ function emitState(room) {
 }
 
 function startQuestion(room, player, kind, space = null) {
-  let pool;
-  if (kind === "city" || kind === "attack") pool = [CITY_QUESTIONS[space.city]];
-  else if (kind === "hard") pool = HARD_QUESTIONS;
-  else pool = QUESTIONS;
-  const data = randomItem(pool);
+  const data = drawQuestion(room.state);
   const duration = 60 + player.extraTime;
   player.extraTime = 0;
   const question = {
@@ -351,17 +313,17 @@ function resolveAnswer(room, answerIndex, timedOut) {
   clearTimer(room, "question");
   const player = room.players.find((candidate) => candidate.id === question.playerId);
   if (!player) return;
-  const correct = !timedOut && answerIndex === question.data.correct;
+  const correct = !timedOut && answerIndex === question.data.correctIndex;
   const rewards = [];
   room.state.answerResult = {
     questionId: question.id,
     correct,
     timedOut,
-    correctIndex: question.data.correct,
+    correctIndex: question.data.correctIndex,
     submittedIndex: timedOut ? null : answerIndex,
     message: timedOut
-      ? `Уақыт аяқталды. Дұрыс жауап: ${question.data.a[question.data.correct]}.`
-      : correct ? "Дұрыс жауап! +20 ұпай" : `Қате жауап. Дұрысы: ${question.data.a[question.data.correct]}.`
+      ? `Уақыт аяқталды. Дұрыс жауап: ${question.data.options[question.data.correctIndex]}.`
+      : correct ? "Дұрыс жауап! +20 ұпай" : `Қате жауап. Дұрысы: ${question.data.options[question.data.correctIndex]}.`
   };
   if (correct) {
     player.score += 20 + (question.kind === "hard" ? 50 : 0);
@@ -419,21 +381,16 @@ function startRewards(room, rewards, source = "СЫЙЛЫҚ") {
   emitState(room);
 }
 
-function grantBonus(player, bonus) {
-  if (bonus.id === "double") player.extraMoves += 1;
-  if (bonus.id === "shield") player.shields += 1;
-  if (bonus.id === "points") player.score += 50;
-  if (bonus.id === "time") player.extraTime += 30;
-  if (bonus.id === "fifty") player.fiftyFifty += 1;
-}
-
 function chestReward(room, player) {
-  const selected = randomItem(CHEST_REWARDS);
+  let selected = randomItem(CHEST_REWARDS);
+  if ((selected.id === "double" || selected.id === "rare-move") && player.extraMoves > 0) {
+    player.extraMoves = 0;
+    selected = pickWeightedBonus(["double"]);
+  }
   const gift = { ...selected, description: selected.description };
   if (gift.id === "points") player.score += 100;
   else if (gift.id === "rare-points") player.score += 150;
-  else if (gift.id === "double") player.extraMoves += 1;
-  else if (gift.id === "rare-move") player.extraMoves += 2;
+  else if (gift.id === "double" || gift.id === "rare-move") player.extraMoves = 1;
   else if (gift.id === "shield") player.shields += 1;
   else if (gift.id === "time") player.extraTime += 30;
   else if (gift.id === "fifty") player.fiftyFifty += 1;
@@ -477,7 +434,7 @@ function landOnSpace(room, player) {
     if (player.stars >= 3 && !player.starPrize) {
       player.starPrize = true;
       player.score += 100;
-      player.extraMoves += 1;
+      player.extraMoves = 1;
       rewards.push({ icon: "🌟", title: "Үш жұлдыз сыйлығы!", description: `${player.name} +100 ұпай және бір қосымша жүріс алды.` });
       log(room, `${player.name} үш жұлдыз жинап, арнайы сыйлық алды.`);
     }
@@ -485,7 +442,8 @@ function landOnSpace(room, player) {
     return;
   }
   if (space.type === "bonus") {
-    const bonus = randomItem(BONUS_DECK);
+    let bonus = pickWeightedBonus();
+    bonus = resolveDuplicateDouble(player, bonus);
     grantBonus(player, bonus);
     log(room, `${player.name} бонус алды: ${bonus.title}.`);
     startRewards(room, [{ icon: bonus.icon, title: bonus.title, description: bonus.description }], "БОНУС ҰЯШЫҒЫ");
@@ -503,7 +461,7 @@ function landOnSpace(room, player) {
   advanceTurn(room);
 }
 
-function advanceTurn(room) {
+function advanceTurn(room, skipExtraMoveOffer = false) {
   clearTimer(room, "question");
   clearTimer(room, "answerResult");
   room.state.question = null;
@@ -511,13 +469,16 @@ function advanceTurn(room) {
   room.state.reward = null;
   room.state.rewards = [];
   const player = room.players[room.currentTurn];
-  if (player?.connected && !player.finished && player.extraMoves > 0) {
-    player.extraMoves -= 1;
+  if (!skipExtraMoveOffer && shouldOfferExtraMove(room.state, player)) {
+    room.state.extraMoveOffer = true;
+    room.state.extraMovePending = false;
     room.state.phase = "ready";
-    log(room, `${player.name} қосымша жүрісін бастайды.`);
     emitState(room);
     return;
   }
+  room.state.turnRolls = 0;
+  room.state.extraMoveOffer = false;
+  room.state.extraMovePending = false;
   if (allPlayersFinished(room)) {
     finishGame(room);
     return;
@@ -612,7 +573,12 @@ function detachSocket(socket, explicit = false) {
     }
     log(room, `${player.name} бөлмеден шықты.`);
     io.to(room.code).emit("playerLeft", { playerId: player.id, name: player.name });
-    if (wasCurrent && room.state.phase !== "lobby" && room.state.phase !== "ended") advanceTurn(room);
+    if (wasCurrent && room.state.phase !== "lobby" && room.state.phase !== "ended") {
+      room.state.turnRolls = 0;
+      room.state.extraMoveOffer = false;
+      room.state.extraMovePending = false;
+      advanceTurn(room);
+    }
     else emitState(room);
     touch(room);
     return;
@@ -670,7 +636,12 @@ io.on("connection", (socket) => {
       currentTurn: 0,
       createdAt: Date.now(),
       lastActivity: Date.now(),
-      state: { phase: "lobby", spaces: makeSpaces(), diceValue: null, question: null, answerResult: null, rewards: [], reward: null, openedChests: [], log: [], winnerId: null, tied: false },
+      state: {
+        phase: "lobby", spaces: makeSpaces(), diceValue: null, question: null, answerResult: null,
+        rewards: [], reward: null, rewardSource: null, openedChests: [], log: [], winnerId: null,
+        tied: false, turnRolls: 0, extraMoveOffer: false, extraMovePending: false,
+        questionQueue: [], usedQuestionIds: [], lastQuestionId: null, questionCycle: 0
+      },
       timers: {}
     };
     const player = makePlayer(client, name, colorId);
@@ -745,6 +716,10 @@ io.on("connection", (socket) => {
     if (connected.length < 2) throw fail("Ойынды бастау үшін кемінде 2 ойыншы керек.");
     room.players = connected;
     room.currentTurn = 0;
+    room.state.turnRolls = 0;
+    room.state.extraMoveOffer = false;
+    room.state.extraMovePending = false;
+    initializeQuestionCycle(room.state);
     room.state.phase = "ready";
     room.state.log = [`${connected.length} ойыншы тарихи сапарды бастады.`];
     touch(room);
@@ -754,6 +729,14 @@ io.on("connection", (socket) => {
   request(socket, "rollDice", (client) => {
     const { room, player } = requirePlayer(client, { phase: "ready", turn: true });
     if (player.finished) throw fail("Сіз мәреге жетіп қойдыңыз.");
+    if (!canRollDice(room.state)) {
+      if (room.state.turnRolls >= 2) throw fail("Бұл кезекте кубикті екі рет лақтырдыңыз.");
+      if (room.state.turnRolls === 1) throw fail("Алдымен қос жүріс бонусын қолданыңыз.");
+      throw fail("Қос жүріс күйі жарамсыз.");
+    }
+    room.state.turnRolls += 1;
+    room.state.extraMoveOffer = false;
+    room.state.extraMovePending = false;
     room.state.phase = "diceRolling";
     room.state.diceValue = crypto.randomInt(1, 7);
     log(room, `${player.name} кубик лақтырды.`);
@@ -763,6 +746,25 @@ io.on("connection", (socket) => {
       io.to(room.code).emit("move", { playerId: player.id, diceValue: room.state.diceValue, from: player.position });
       beginMove(room, player, room.state.diceValue);
     }, 1900);
+  });
+
+  request(socket, "useExtraMove", (client) => {
+    const { room, player } = requirePlayer(client, { phase: "ready", turn: true });
+    if (!canUseExtraMove(room.state, player)) {
+      throw fail("Қос жүріс қазір қолжетімсіз.");
+    }
+    player.extraMoves -= 1;
+    room.state.extraMovePending = true;
+    room.state.extraMoveOffer = false;
+    emitState(room);
+  });
+
+  request(socket, "endTurn", (client) => {
+    const { room, player } = requirePlayer(client, { phase: "ready", turn: true });
+    if (player.finished || room.state.turnRolls !== 1 || player.extraMoves < 1 || room.state.extraMovePending) {
+      throw fail("Кезекті қазір аяқтау мүмкін емес.");
+    }
+    advanceTurn(room, true);
   });
 
   request(socket, "answerQuestion", (client, data) => {
@@ -784,7 +786,7 @@ io.on("connection", (socket) => {
     if (!question || question.playerId !== player.id || data.questionId !== question.id) throw fail("Бұл сұрақ енді белсенді емес.");
     if (player.fiftyFifty < 1 || question.visibleAnswers.length !== 4) throw fail("50/50 мүмкіндігі қолжетімсіз.");
     player.fiftyFifty -= 1;
-    const wrong = question.visibleAnswers.filter((index) => index !== question.data.correct);
+    const wrong = question.visibleAnswers.filter((index) => index !== question.data.correctIndex);
     const removed = new Set();
     while (wrong.length > 2) removed.add(wrong.splice(crypto.randomInt(wrong.length), 1)[0]);
     question.visibleAnswers = question.visibleAnswers.filter((index) => !removed.has(index));
@@ -828,4 +830,7 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, server, io, rooms, COLORS, makeSpaces, serializeRoom, PORT };
+module.exports = {
+  app, server, io, rooms, COLORS, makeSpaces, serializeRoom, PORT,
+  QUESTIONS, BONUS_CONFIG, pickWeightedBonus
+};

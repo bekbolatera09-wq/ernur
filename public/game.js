@@ -37,6 +37,8 @@
     lobbyList: $("lobby-list"), lobbyCount: $("lobby-count"), lobbyWaiting: $("lobby-waiting"),
     startGame: $("start-game-button"), turnLabel: $("turn-label"),
     activePlayer: $("active-player"), turnHint: $("turn-hint"), roll: $("roll-button"),
+    extraMoveActions: $("extra-move-actions"), useExtraMove: $("use-extra-move-button"),
+    endTurn: $("end-turn-button"),
     rollResult: $("roll-result"), players: $("players-list"), playerCount: $("player-count"),
     log: $("event-log"), diceOverlay: $("dice-overlay"), diceCube: $("dice-cube"),
     diceNumber: $("dice-result-number"), leave: $("leave-room-button"),
@@ -98,13 +100,14 @@
   function updateColorAvailability() {
     for (const select of [elements.createColor, elements.joinColor]) {
       const selected = select.value;
-      const occupied = select === elements.joinColor && !roomState
+      const joining = select === elements.joinColor && !roomState;
+      const occupied = joining
         ? new Set(knownColors.filter((color) => !joinAvailableColors.has(color.id)).map((color) => color.id))
         : new Set((roomState?.players || []).map((player) => player.color));
       for (const option of select.options) {
-        option.disabled = occupied.has(option.value) && option.value !== selected;
+        option.disabled = occupied.has(option.value) && (joining || option.value !== selected);
       }
-      if (select.selectedOptions[0]?.disabled) {
+      if ((joining && occupied.has(selected)) || select.selectedOptions[0]?.disabled) {
         const first = [...select.options].find((option) => !option.disabled);
         if (first) select.value = first.value;
       }
@@ -270,17 +273,27 @@
       elements.activePlayer.textContent = "Ойынға дайынсыз ба?";
       elements.turnHint.textContent = "Бөлме құрып, ойыншыларды шақырыңыз.";
       elements.roll.disabled = true;
+      elements.extraMoveActions.hidden = true;
       return;
     }
+    const isMyTurn = roomState.meId === roomState.currentPlayerId;
+    const canUseExtraMove = Boolean(roomState.extraMoveOffer && isMyTurn &&
+      roomState.phase === "ready" && !player?.finished);
     elements.turnLabel.textContent = roomState.phase === "ended" ? "ОЙЫН АЯҚТАЛДЫ" :
       `КЕЗЕК · ${roomState.currentTurn + 1}/${roomState.players.length}`;
     elements.activePlayer.textContent = roomState.phase === "ended" ? "Қорытынды дайын" : player?.name || "Ойыншы күтілуде";
-    elements.turnHint.textContent = roomState.phase === "ended" ? "Барлық белсенді ойыншы мәреге жетті." :
+    elements.turnHint.textContent = canUseExtraMove ? "Қосымша жүрісті қолданыңыз немесе кезекті аяқтаңыз." :
+      roomState.phase === "ended" ? "Барлық белсенді ойыншы мәреге жетті." :
       player?.finished ? "Мәреге жеттіңіз. Қалған ойыншылар ойынын жалғастыруда." :
         roomState.phase === "waiting" ? "Ойыншылар қайта қосылғанша күтіңіз." :
           `${player?.position === 0 ? "Бастаудан шығу" : `Орны: ${player?.position}/48`} · Қаласы: ${player ? cityCount(player) : 0}`;
     elements.roll.disabled = !player || roomState.phase !== "ready" ||
-      roomState.meId !== roomState.currentPlayerId || player.finished;
+      !isMyTurn || player.finished || roomState.turnRolls >= 2 ||
+      (roomState.turnRolls === 1 && !roomState.extraMovePending);
+    elements.extraMoveActions.hidden = Boolean(!roomState.extraMoveOffer || roomState.phase !== "ready");
+    elements.useExtraMove.disabled = !canUseExtraMove;
+    elements.endTurn.hidden = !roomState.extraMoveOffer;
+    elements.endTurn.disabled = !canUseExtraMove;
     elements.leave.hidden = !roomState.meId;
   }
 
@@ -634,6 +647,12 @@
   elements.startGame.addEventListener("click", () => action("startGame", {}));
   elements.roll.addEventListener("click", () => {
     if (!elements.roll.disabled) action("rollDice", {});
+  });
+  elements.useExtraMove.addEventListener("click", () => {
+    if (!elements.useExtraMove.disabled) action("useExtraMove", {});
+  });
+  elements.endTurn.addEventListener("click", () => {
+    if (!elements.endTurn.disabled) action("endTurn", {});
   });
   elements.fifty.addEventListener("click", () => {
     if (roomState?.question) action("useFiftyFifty", { questionId: roomState.question.id });
